@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador PID Realístico v6.0</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #007BFF;
+            --secondary-color: #6c757d;
+            --success-color: #28a745;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --output-color: #8e44ad; /* Roxo para o gráfico de saída */
+            --background-color: #f4f7f9;
+            --card-background: #ffffff;
+            --text-color: #333;
+            --border-color: #dee2e6;
+            --shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+        .container { max-width: 1400px; margin: 20px auto; padding: 0 20px; }
+        header { text-align: center; margin-bottom: 30px; border-bottom: 1px solid var(--border-color); padding-bottom: 20px; }
+        h1 { color: var(--primary-color); margin-bottom: 0.5rem; }
+        header p { font-size: 1.1rem; color: var(--secondary-color); max-width: 800px; margin: 0 auto; }
+        
+        .main-layout { display: flex; flex-wrap: wrap; gap: 20px; }
+        .controls-panel { flex: 1; min-width: 320px; }
+        .visualization-panel { flex: 3; min-width: 600px; }
+        
+        .panel { background-color: var(--card-background); padding: 25px; border-radius: 8px; box-shadow: var(--shadow); }
+        h2, h3 { margin-top: 0; color: var(--primary-color); border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 20px; }
+        
+        .control-group { margin-bottom: 20px; }
+        .control-group label { display: block; font-weight: bold; margin-bottom: 8px; }
+        .control-group input { width: 100%; box-sizing: border-box; }
+        .control-group input[type="range"] { cursor: pointer; }
+        .slider-value { font-weight: bold; color: var(--primary-color); margin-left: 10px; }
+        .button-group { display: flex; gap: 10px; margin-top: 25px; }
+        .button { flex-grow: 1; padding: 12px 15px; border: none; border-radius: 5px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: all 0.2s ease; }
+        .button:active { transform: translateY(1px); }
+        #startButton { background-color: var(--primary-color); color: white; }
+        #startButton:hover { background-color: #0056b3; }
+        #disturbanceButton { background-color: var(--secondary-color); color: white; }
+        #disturbanceButton:hover { background-color: #5a6268; }
+        #disturbanceButton.active { background-color: var(--danger-color); }
+        .presets-group { margin-top: 25px; }
+        .presets-group h3 { font-size: 1.1rem; margin-bottom: 10px; }
+        .presets-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .preset-button { padding: 8px; background-color: #e9ecef; border: 1px solid var(--border-color); color: var(--primary-color); border-radius: 5px; cursor: pointer; font-size: 0.9rem; text-align: center; }
+        .preset-button:hover { background-color: #ced4da; }
+
+        .visualization-content { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+        .graph-container, .output-graph-container {
+            flex: 1;
+            min-width: 350px;
+            position: relative;
+            height: 350px;
+        }
+
+        .realtime-data-grid { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; text-align: center; }
+        .data-point { background-color: #f8f9fa; padding: 10px; border-radius: 5px; }
+        .data-point .label { font-size: 0.9rem; margin-bottom: 5px; color: var(--secondary-color); }
+        .data-point .value { font-size: 1.4rem; font-weight: bold; }
+        #currentValueSpan { color: var(--primary-color); }
+        #currentErrorSpan { color: var(--danger-color); }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Simulador PID Realístico</h1>
+            <p>Visualize a resposta do sistema e o esforço de controle necessário para vencer uma carga constante, como a gravidade.</p>
+        </header>
+
+        <main class="main-layout">
+            <section class="panel controls-panel">
+                <h2>Controles e Configurações</h2>
+                <div class="control-group">
+                    <label for="setpoint">Setpoint (Alvo):</label>
+                    <input type="number" id="setpoint" value="80" min="0" max="100">
+                </div>
+                <div class="control-group">
+                    <label for="kp">Ganho Proporcional (Kp): <span class="slider-value" id="kpValue">1.0</span></label>
+                    <input type="range" id="kp" min="0" max="5" step="0.1" value="1">
+                </div>
+                <div class="control-group">
+                    <label for="ki">Ganho Integral (Ki): <span class="slider-value" id="kiValue">0.10</span></label>
+                    <input type="range" id="ki" min="0" max="2" step="0.05" value="0.1">
+                </div>
+                <div class="control-group">
+                    <label for="kd">Ganho Derivativo (Kd): <span class="slider-value" id="kdValue">0.5</span></label>
+                    <input type="range" id="kd" min="0" max="10" step="0.2" value="0.5">
+                </div>
+                
+                <div class="presets-group">
+                    <h3>Cenários de Demonstração</h3>
+                    <div class="presets-buttons">
+                        <button class="preset-button" data-preset="p_only">Puro P (Erro)</button>
+                        <button class="preset-button" data-preset="pi">Controle PI</button>
+                        <button class="preset-button" data-preset="pid_damped">PID Amortecido</button>
+                        <button class="preset-button" data-preset="pid_oscillatory">PID Oscilatório</button>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button id="startButton" class="button">Reiniciar</button>
+                    <button id="disturbanceButton" class="button">Perturbação Extra</button>
+                </div>
+            </section>
+
+            <section class="panel visualization-panel">
+                <h2>Visualização em Tempo Real</h2>
+                <div class="visualization-content">
+                    <div class="graph-container">
+                        <h3>Resposta do Sistema</h3>
+                        <canvas id="responseChart"></canvas>
+                    </div>
+                    <div class="output-graph-container">
+                        <h3>Esforço de Controle (Saída do PID)</h3>
+                        <canvas id="outputChart"></canvas>
+                    </div>
+                </div>
+                <div class="realtime-data-grid">
+                    <div class="data-point"><div class="label">Valor Atual</div><span class="value" id="currentValueSpan">0.00</span></div>
+                    <div class="data-point"><div class="label">Erro</div><span class="value" id="currentErrorSpan">0.00</span></div>
+                    <div class="data-point"><div class="label">Termo P</div><span class="value" id="pTermSpan">0.00</span></div>
+                    <div class="data-point"><div class="label">Termo I</div><span class="value" id="iTermSpan">0.00</span></div>
+                    <div class="data-point"><div class="label">Termo D</div><span class="value" id="dTermSpan">0.00</span></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    const UIElements = {
+        setpoint: document.getElementById('setpoint'),
+        kpSlider: document.getElementById('kp'), kiSlider: document.getElementById('ki'), kdSlider: document.getElementById('kd'),
+        kpValue: document.getElementById('kpValue'), kiValue: document.getElementById('kiValue'), kdValue: document.getElementById('kdValue'),
+        startButton: document.getElementById('startButton'), disturbanceButton: document.getElementById('disturbanceButton'),
+        responseChartCtx: document.getElementById('responseChart').getContext('2d'),
+        outputChartCtx: document.getElementById('outputChart').getContext('2d'),
+        currentValue: document.getElementById('currentValueSpan'), currentError: document.getElementById('currentErrorSpan'),
+        pTerm: document.getElementById('pTermSpan'), iTerm: document.getElementById('iTermSpan'), dTerm: document.getElementById('dTermSpan'),
+        presetButtons: document.querySelectorAll('.preset-button'),
+    };
+
+    let responseChart, outputChart, simulationInterval;
+    
+    let sim = {
+        processValue: 0, velocity: 0, integralTerm: 0, previousError: 0,
+        disturbance: 0, isDisturbanceActive: false,
+        timeData: [], processValueData: [], setpointData: [], controlOutputData: []
+    };
+
+    const config = {
+        SIMULATION_STEP_MS: 40, DT: 40 / 1000, MAX_DATA_POINTS: 250,
+        DISTURBANCE_FORCE: -30, MAX_CONTROL_OUTPUT: 100,
+        PLANT_INERTIA: 1.0, PLANT_FRICTION: 0.2,
+        // *** MUDANÇA PRINCIPAL: Adicionada uma carga constante ao sistema ***
+        // Simula gravidade, perda de calor, um vazamento, etc.
+        // Exige um esforço contínuo do controlador para manter o setpoint.
+        PLANT_LOAD: 20.0,
+    };
+    const presets = {
+        p_only: { kp: 0.8, ki: 0, kd: 0 },
+        pi: { kp: 0.6, ki: 0.2, kd: 0 },
+        pid_damped: { kp: 1.5, ki: 0.5, kd: 3.5 },
+        pid_oscillatory: { kp: 4.0, ki: 1.0, kd: 1.0 }
+    };
+    
+    function initializeCharts() {
+        if (responseChart) responseChart.destroy();
+        responseChart = new Chart(UIElements.responseChartCtx, {
+            type: 'line', data: { labels: sim.timeData, datasets: [
+                { label: 'Setpoint', data: sim.setpointData, borderColor: 'rgba(40, 167, 69, 0.9)', borderWidth: 2, borderDash: [5, 5], pointRadius: 0 },
+                { label: 'Processo', data: sim.processValueData, borderColor: 'rgba(0, 123, 255, 1)', borderWidth: 3, pointRadius: 0, tension: 0.2 }
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, animation: false,
+                scales: { x: { display: false }, y: { min: -10, max: 120, title: { display: true, text: 'Valor do Processo'} } },
+                plugins: { legend: { position: 'top' } }
+            }
+        });
+
+        if (outputChart) outputChart.destroy();
+        outputChart = new Chart(UIElements.outputChartCtx, {
+            type: 'line', data: { labels: sim.timeData, datasets: [
+                { label: 'Saída do Controlador', data: sim.controlOutputData, borderColor: 'var(--output-color)', backgroundColor: 'rgba(142, 68, 173, 0.1)', borderWidth: 2, pointRadius: 0, tension: 0.2, fill: true }
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, animation: false,
+                scales: { x: { display: false }, y: { min: -config.MAX_CONTROL_OUTPUT-10, max: config.MAX_CONTROL_OUTPUT+10, title: { display: true, text: 'Esforço (%)'} } },
+                plugins: { legend: { position: 'top' } }
+            }
+        });
+    }
+
+    function resetSimulation() {
+        if (simulationInterval) clearInterval(simulationInterval);
+        Object.assign(sim, { processValue: 0, velocity: 0, integralTerm: 0,
+            previousError: parseFloat(UIElements.setpoint.value),
+            timeData: [], processValueData: [], setpointData: [], controlOutputData: []
+        });
+        if (sim.isDisturbanceActive) toggleDisturbance();
+        initializeCharts();
+        simulationInterval = setInterval(simulationStep, config.SIMULATION_STEP_MS);
+    }
+    
+    function simulationStep() {
+        const setpoint = parseFloat(UIElements.setpoint.value);
+        const Kp = parseFloat(UIElements.kpSlider.value);
+        const Ki = parseFloat(UIElements.kiSlider.value);
+        const Kd = parseFloat(UIElements.kdSlider.value);
+
+        const error = setpoint - sim.processValue;
+        sim.integralTerm += Ki * error * config.DT;
+        const errorDerivative = (error - sim.previousError) / config.DT;
+        sim.previousError = error;
+
+        const pTerm = Kp * error; const iTerm = sim.integralTerm; const dTerm = Kd * errorDerivative;
+        let controlOutput = pTerm + iTerm + dTerm;
+        controlOutput = Math.max(-config.MAX_CONTROL_OUTPUT, Math.min(config.MAX_CONTROL_OUTPUT, controlOutput));
+        
+        // *** MUDANÇA PRINCIPAL: Inclusão da Carga na física ***
+        const systemLoadForce = -config.PLANT_LOAD;
+        const frictionForce = -config.PLANT_FRICTION * sim.velocity;
+        const netForce = controlOutput + sim.disturbance + frictionForce + systemLoadForce;
+        // *** FIM DA MUDANÇA ***
+
+        const acceleration = netForce / config.PLANT_INERTIA;
+        sim.velocity += acceleration * config.DT;
+        sim.processValue += sim.velocity * config.DT;
+
+        updateUI(setpoint, error, { pTerm, iTerm, dTerm }, controlOutput);
+    }
+
+    function updateUI(setpoint, error, terms, controlOutput) {
+        sim.timeData.push(sim.timeData.length);
+        sim.processValueData.push(sim.processValue);
+        sim.setpointData.push(setpoint);
+        sim.controlOutputData.push(controlOutput);
+
+        if (sim.timeData.length > config.MAX_DATA_POINTS) {
+            sim.timeData.shift(); sim.processValueData.shift(); sim.setpointData.shift(); sim.controlOutputData.shift();
+        }
+
+        responseChart.update();
+        outputChart.update();
+
+        UIElements.currentValue.textContent = sim.processValue.toFixed(2);
+        UIElements.currentError.textContent = error.toFixed(2);
+        UIElements.pTerm.textContent = terms.pTerm.toFixed(2);
+        UIElements.iTerm.textContent = terms.iTerm.toFixed(2);
+        UIElements.dTerm.textContent = terms.dTerm.toFixed(2);
+    }
+
+    function updateSlider(slider, valueSpan, value) {
+        slider.value = value; valueSpan.textContent = parseFloat(value).toFixed(2);
+    }
+
+    function applyPreset(presetName) {
+        const preset = presets[presetName];
+        if (!preset) return;
+        updateSlider(UIElements.kpSlider, UIElements.kpValue, preset.kp);
+        updateSlider(UIElements.kiSlider, UIElements.kiValue, preset.ki);
+        updateSlider(UIElements.kdSlider, UIElements.kdValue, preset.kd);
+        sim.integralTerm = 0;
+    }
+
+    function toggleDisturbance() {
+        sim.isDisturbanceActive = !sim.isDisturbanceActive;
+        sim.disturbance = sim.isDisturbanceActive ? config.DISTURBANCE_FORCE : 0;
+        UIElements.disturbanceButton.textContent = sim.isDisturbanceActive ? 'Remover Pert.' : 'Perturbação Extra';
+        UIElements.disturbanceButton.classList.toggle('active', sim.isDisturbanceActive);
+    }
+
+    UIElements.kpSlider.addEventListener('input', () => UIElements.kpValue.textContent = parseFloat(UIElements.kpSlider.value).toFixed(2));
+    UIElements.kiSlider.addEventListener('input', () => UIElements.kiValue.textContent = parseFloat(UIElements.kiSlider.value).toFixed(2));
+    UIElements.kdSlider.addEventListener('input', () => UIElements.kdValue.textContent = parseFloat(UIElements.kdSlider.value).toFixed(2));
+    UIElements.startButton.addEventListener('click', resetSimulation);
+    UIElements.disturbanceButton.addEventListener('click', toggleDisturbance);
+    UIElements.presetButtons.forEach(button => { button.addEventListener('click', () => applyPreset(button.dataset.preset)); });
+
+    resetSimulation();
+});
+</script>
+
+</body>
+</html>
